@@ -1,0 +1,88 @@
+## Usage Example: ansible-playbook tower-uninstall.yml -e version="3.5" -e os_version="rhel7"
+
+- hosts: localhost
+  vars:
+    version: ""
+    path_to_tower_bundle: ""
+    os_version: ""
+  tasks:
+    - name: Uninstall Ansible Tower <= 3.5
+      shell: |
+        ansible-tower-service stop
+        yum remove ansible-tower\*
+        yum -y remove rabbitmq-server
+        rm -rf /etc/tower /var/lib/{pgsql,awx,rabbitmq}
+      register: command_output
+      ignore_errors: yes
+      args:
+        chdir: /{{ path_to_tower_bundle }}
+        executable: /bin/bash
+      when: version <= '3.5'
+
+    - name: Uninstall Ansible Tower 3.6+ on RHEL 7
+      shell: |
+        ansible-tower-service stop
+        yum remove ansible-tower\*
+        yum -y remove rabbitmq-server
+        yum remove rh-python36-*
+        yum remove rh-redis5*
+        yum remove rh-postgresql10-*
+        rm /etc/profile.d/rh-postgresql10-env.sh
+        rm -rf /etc/tower /var/lib/{pgsql,awx,rabbitmq}
+        rm -rf /var/opt/rh/rh-postgresql10/lib/pgsql/data
+        rm -rf /var/lib/tower-bundle
+        yum clean metadata --enablerepo="ansible-tower,ansible-tower-dependencies"
+        yum-config-manager --disable automation-hub
+      register: command_output
+      ignore_errors: yes
+      args:
+        chdir: /{{ path_to_tower_bundle }}
+        executable: /bin/bash
+      when: version >= '3.6' && os_version == rhel7
+
+    - name: Uninstall Ansible Tower 3.6+ on RHEL 8
+      shell: |
+        ansible-tower-service stop
+        yum remove ansible-tower\*
+        yum -y remove rabbitmq-server
+        yum remove rh-python36-* 
+        yum remove postgresql*
+        rm -rf /etc/tower /var/lib/{pgsql,awx,rabbitmq}
+        rm -rf /var/lib/pgsql/data
+        rm -rf /var/lib/tower-bundle
+        yum clean metadata --enablerepo="ansible-tower,ansible-tower-dependencies"
+        yum-config-manager --disable automation-hub
+      register: command_output
+      ignore_errors: yes
+      args:
+        chdir: /{{ path_to_tower_bundle }}
+        executable: /bin/bash
+      when: version >= '3.6' && os_version == rhel8
+
+    - name: Ansible Tower components without removing data
+      shell: |
+        setup.sh -b
+        ansible-tower-service stop
+        yum remove ansible-tower\*
+        yum -y remove rabbitmq-server
+        echo "If you reinstall Tower, restore Tower: setup.sh -r with the backup file 1"
+      register: command_output
+      ignore_errors: yes
+      args:
+        chdir: /{{ path_to_tower_bundle }}
+        executable: /bin/bash
+      when: version is not defined or version|length == 0
+
+    - name: Ansible Tower components are uninstalled
+      shell: rpm -qa | grep ansible-tower
+      register: command_output
+      changed_when: command_output.stdout_lines | length > 0
+
+    - name: Check if Ansible Tower Components Installation incomplete
+      debug:
+        msg: 
+         - "Ansible Tower Components Installation incomplete! Use yum erase <package-name> to remove any remaining ansible-tower-* packages."
+         - "If you've encountered a PREIN Scriplet error please use rpm -e --noscripts <PACKAGE_NAME> to complete uninstall"
+         - "Command output value: {{ command_output.stdout }}"
+      when: command_output.stdout
+
